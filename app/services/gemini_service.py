@@ -1,23 +1,22 @@
 import os
 import json
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 
 # ==================================================
-# Setup
+# Environment & Client Setup
 # ==================================================
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
+API_KEY = os.getenv("GEMINI_API_KEY")
+if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY is not set")
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=API_KEY)
 
-# IMPORTANT:
-# google-generativeai SDK DOES NOT support gemini-1.5-pro
-MODEL_NAME = "gemini-1.0-pro"
+# ✅ SAFE, AVAILABLE MODEL
+MODEL_NAME = "models/gemini-pro-latest"
 
 # ==================================================
 # Helper: STRICT JSON GUARD
@@ -30,26 +29,27 @@ IMPORTANT RULES (ABSOLUTE):
 - No markdown
 - No comments
 - No explanations
-- No trailing commas
 - Output must start with '{{' and end with '}}'
+- Do not include trailing commas
 
 {instruction}
-"""
+""".strip()
+
 
 def _generate(prompt: str) -> str:
     """
-    Centralized Gemini call.
-    Keeps model creation local (important for server stability).
+    Centralized Gemini call with safety defaults
     """
-    model = genai.GenerativeModel(
-        MODEL_NAME,
-        generation_config={
-            "temperature": 0.2,
-            "max_output_tokens": 2048,
-        }
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt
     )
-    response = model.generate_content(prompt)
+
+    if not response or not response.text:
+        raise RuntimeError("Empty response from Gemini")
+
     return response.text.strip()
+
 
 # ==================================================
 # 1. ANALYZE INTENT
@@ -76,13 +76,15 @@ JSON:
 """)
     return _generate(prompt)
 
+
 # ==================================================
 # 2. GENERATE SYSTEM ARCHITECTURE
 # ==================================================
 
 def generate_system_architecture(intent_analysis: dict) -> str:
     prompt = _json_guard(f"""
-Design a system architecture from this intent:
+Design a system architecture from this intent analysis:
+
 {json.dumps(intent_analysis, indent=2)}
 
 JSON:
@@ -94,13 +96,15 @@ JSON:
 """)
     return _generate(prompt)
 
+
 # ==================================================
 # 3. SIMULATE FAILURE
 # ==================================================
 
 def simulate_failure(system_architecture: dict) -> str:
     prompt = _json_guard(f"""
-Analyze failure modes for:
+Analyze failure modes for this system:
+
 {json.dumps(system_architecture, indent=2)}
 
 JSON:
@@ -113,13 +117,14 @@ JSON:
 """)
     return _generate(prompt)
 
+
 # ==================================================
 # 4. OPTIMIZE SYSTEM
 # ==================================================
 
 def optimize_system(system_architecture: dict, objective: str) -> str:
     prompt = _json_guard(f"""
-Optimize system for objective: {objective}
+Optimize the following system for objective: {objective}
 
 System:
 {json.dumps(system_architecture, indent=2)}
@@ -136,13 +141,15 @@ JSON:
 """)
     return _generate(prompt)
 
+
 # ==================================================
 # 5. EXPLAIN SYSTEM
 # ==================================================
 
 def explain_system(system_architecture: dict) -> str:
     prompt = _json_guard(f"""
-Explain decisions for:
+Explain the architectural decisions for this system:
+
 {json.dumps(system_architecture, indent=2)}
 
 JSON:
