@@ -1,7 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 
 # ==================================================
 # Setup
@@ -9,39 +9,26 @@ from google import genai
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY not found in environment")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-# Use latest stable Gemini Pro model
-MODEL_NAME = "models/gemini-pro-latest"
-
+MODEL_NAME = "gemini-1.5-pro"
+model = genai.GenerativeModel(MODEL_NAME)
 
 # ==================================================
 # Helper: STRICT JSON GUARD
 # ==================================================
 
 def _json_guard(instruction: str) -> str:
-    """
-    Enforces strict machine-parseable JSON output.
-    This is CRITICAL for FastAPI + Pydantic reliability.
-    """
     return f"""
-IMPORTANT RULES (ABSOLUTE – NO EXCEPTIONS):
+IMPORTANT RULES (ABSOLUTE):
 - Respond with ONLY valid JSON
-- Do NOT include markdown
-- Do NOT include comments
-- Do NOT include explanations outside JSON
-- Do NOT include trailing commas
-- JSON must start with '{{' and end with '}}'
-- Every field must match the schema exactly
-- Arrays must be valid JSON arrays
+- No markdown
+- No comments
+- No explanations
+- Output must start with '{{' and end with '}}'
 
 {instruction}
-""".strip()
-
+"""
 
 # ==================================================
 # 1. ANALYZE INTENT
@@ -49,11 +36,7 @@ IMPORTANT RULES (ABSOLUTE – NO EXCEPTIONS):
 
 def analyze_intent(content: str) -> str:
     prompt = _json_guard(f"""
-You are an expert AI system architect.
-
-Decompose the following intent into structured system requirements.
-
-Return:
+Decompose the intent into:
 - goals
 - constraints
 - actors
@@ -62,22 +45,15 @@ Return:
 Intent:
 {content}
 
-JSON schema:
+JSON:
 {{
-  "goals": ["..."],
-  "constraints": ["..."],
-  "actors": ["..."],
-  "success_metrics": ["..."]
+  "goals": [],
+  "constraints": [],
+  "actors": [],
+  "success_metrics": []
 }}
 """)
-
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
-
-    return response.text.strip()
-
+    return model.generate_content(prompt).text
 
 # ==================================================
 # 2. GENERATE SYSTEM ARCHITECTURE
@@ -85,53 +61,17 @@ JSON schema:
 
 def generate_system_architecture(intent_analysis: dict) -> str:
     prompt = _json_guard(f"""
-You are a senior distributed systems architect.
-
-Design a production-grade, scalable, fault-tolerant system.
-
-For EACH decision rule include:
-- decision
-- justification
-- confidence (0–100)
-- risk_level (LOW | MEDIUM | HIGH)
-
-Intent analysis:
+Design a system architecture from this intent:
 {json.dumps(intent_analysis, indent=2)}
 
-JSON schema:
+JSON:
 {{
-  "modules": [
-    {{
-      "name": "",
-      "responsibility": "",
-      "inputs": [],
-      "outputs": []
-    }}
-  ],
-  "data_flow": [
-    {{
-      "flow_name": "",
-      "steps": []
-    }}
-  ],
-  "decision_rules": [
-    {{
-      "decision": "",
-      "justification": "",
-      "confidence": 85,
-      "risk_level": "MEDIUM"
-    }}
-  ]
+  "modules": [],
+  "data_flow": [],
+  "decision_rules": []
 }}
 """)
-
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
-
-    return response.text.strip()
-
+    return model.generate_content(prompt).text
 
 # ==================================================
 # 3. SIMULATE FAILURE
@@ -139,44 +79,18 @@ JSON schema:
 
 def simulate_failure(system_architecture: dict) -> str:
     prompt = _json_guard(f"""
-You are a senior reliability and risk engineer.
-
-Perform failure-mode, stress, and resilience analysis.
-
-For EACH failure point include:
-- point
-- description
-- impact
-- affected_modules
-- mitigation
-
-System architecture:
+Analyze failure modes for:
 {json.dumps(system_architecture, indent=2)}
 
-JSON schema:
+JSON:
 {{
   "best_case": "",
   "worst_case": "",
-  "failure_points": [
-    {{
-      "point": "",
-      "description": "",
-      "impact": "",
-      "affected_modules": [],
-      "mitigation": ""
-    }}
-  ],
+  "failure_points": [],
   "risk_level": "LOW | MEDIUM | HIGH"
 }}
 """)
-
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
-
-    return response.text.strip()
-
+    return model.generate_content(prompt).text
 
 # ==================================================
 # 4. OPTIMIZE SYSTEM
@@ -184,99 +98,35 @@ JSON schema:
 
 def optimize_system(system_architecture: dict, objective: str) -> str:
     prompt = _json_guard(f"""
-You are a system optimization AI.
+Optimize system for objective: {objective}
 
-Primary optimization objective: {objective}
-
-Redesign the system while preserving correctness,
-security, and observability.
-
-For EACH optimized decision include:
-- decision
-- justification
-- confidence
-- risk_level
-
-System architecture:
+System:
 {json.dumps(system_architecture, indent=2)}
 
-JSON schema:
+JSON:
 {{
   "optimized_architecture": {{
-    "modules": [
-      {{
-        "name": "",
-        "responsibility": "",
-        "inputs": [],
-        "outputs": []
-      }}
-    ],
-    "data_flow": [
-      {{
-        "flow_name": "",
-        "steps": []
-      }}
-    ],
-    "decision_rules": [
-      {{
-        "decision": "",
-        "justification": "",
-        "confidence": 90,
-        "risk_level": "LOW | MEDIUM | HIGH"
-      }}
-    ]
+    "modules": [],
+    "data_flow": [],
+    "decision_rules": []
   }},
-  "tradeoffs": {{
-    "cost": "",
-    "speed": "",
-    "fairness": ""
-  }}
+  "tradeoffs": {{}}
 }}
 """)
-
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
-
-    return response.text.strip()
-
+    return model.generate_content(prompt).text
 
 # ==================================================
-# 5. EXPLAIN SYSTEM (STRUCTURED XAI)
+# 5. EXPLAIN SYSTEM
 # ==================================================
 
 def explain_system(system_architecture: dict) -> str:
     prompt = _json_guard(f"""
-You are an Explainable AI (XAI) system.
-
-Explain WHY each architectural decision was made.
-
-For EACH explanation include:
-- decision
-- justification
-- confidence (0–100)
-- risk_level (LOW | MEDIUM | HIGH)
-
-System architecture:
+Explain decisions for:
 {json.dumps(system_architecture, indent=2)}
 
-JSON schema:
+JSON:
 {{
-  "explanations": [
-    {{
-      "decision": "",
-      "justification": "",
-      "confidence": 88,
-      "risk_level": "MEDIUM"
-    }}
-  ]
+  "explanations": []
 }}
 """)
-
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
-    )
-
-    return response.text.strip()
+    return model.generate_content(prompt).text
