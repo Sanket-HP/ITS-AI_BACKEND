@@ -9,10 +9,15 @@ import google.generativeai as genai
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY is not set")
 
-MODEL_NAME = "gemini-1.5-pro"
-model = genai.GenerativeModel(MODEL_NAME)
+genai.configure(api_key=GEMINI_API_KEY)
+
+# IMPORTANT:
+# google-generativeai SDK DOES NOT support gemini-1.5-pro
+MODEL_NAME = "gemini-1.0-pro"
 
 # ==================================================
 # Helper: STRICT JSON GUARD
@@ -25,10 +30,26 @@ IMPORTANT RULES (ABSOLUTE):
 - No markdown
 - No comments
 - No explanations
+- No trailing commas
 - Output must start with '{{' and end with '}}'
 
 {instruction}
 """
+
+def _generate(prompt: str) -> str:
+    """
+    Centralized Gemini call.
+    Keeps model creation local (important for server stability).
+    """
+    model = genai.GenerativeModel(
+        MODEL_NAME,
+        generation_config={
+            "temperature": 0.2,
+            "max_output_tokens": 2048,
+        }
+    )
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
 # ==================================================
 # 1. ANALYZE INTENT
@@ -53,7 +74,7 @@ JSON:
   "success_metrics": []
 }}
 """)
-    return model.generate_content(prompt).text
+    return _generate(prompt)
 
 # ==================================================
 # 2. GENERATE SYSTEM ARCHITECTURE
@@ -71,7 +92,7 @@ JSON:
   "decision_rules": []
 }}
 """)
-    return model.generate_content(prompt).text
+    return _generate(prompt)
 
 # ==================================================
 # 3. SIMULATE FAILURE
@@ -87,10 +108,10 @@ JSON:
   "best_case": "",
   "worst_case": "",
   "failure_points": [],
-  "risk_level": "LOW | MEDIUM | HIGH"
+  "risk_level": "LOW"
 }}
 """)
-    return model.generate_content(prompt).text
+    return _generate(prompt)
 
 # ==================================================
 # 4. OPTIMIZE SYSTEM
@@ -113,7 +134,7 @@ JSON:
   "tradeoffs": {{}}
 }}
 """)
-    return model.generate_content(prompt).text
+    return _generate(prompt)
 
 # ==================================================
 # 5. EXPLAIN SYSTEM
@@ -129,4 +150,4 @@ JSON:
   "explanations": []
 }}
 """)
-    return model.generate_content(prompt).text
+    return _generate(prompt)
