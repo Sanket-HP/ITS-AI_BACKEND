@@ -2,6 +2,7 @@ fastapi
 uvicorn
 gunicorn
 python-dotenv
-pydantic
+pydantic>=2.0
+pydantic-settings
 requests
 google-generativeai
