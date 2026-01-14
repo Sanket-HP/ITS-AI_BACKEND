@@ -15,11 +15,11 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
-# ✅ SAFE, AVAILABLE MODEL
+# ✅ Verified available model
 MODEL_NAME = "models/gemini-pro-latest"
 
 # ==================================================
-# Helper: STRICT JSON GUARD
+# Helpers
 # ==================================================
 
 def _json_guard(instruction: str) -> str:
@@ -37,9 +37,6 @@ IMPORTANT RULES (ABSOLUTE):
 
 
 def _generate(prompt: str) -> str:
-    """
-    Centralized Gemini call with safety defaults
-    """
     response = client.models.generate_content(
         model=MODEL_NAME,
         contents=prompt
@@ -51,11 +48,48 @@ def _generate(prompt: str) -> str:
     return response.text.strip()
 
 
+def _safe_json_load(text: str) -> dict:
+    """
+    Prevents crashes if Gemini returns slightly malformed JSON
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON from Gemini: {e}")
+
+
+# ==================================================
+# Normalizers (CRITICAL)
+# ==================================================
+
+def normalize_modules(modules: list) -> list:
+    normalized = []
+    for m in modules:
+        normalized.append({
+            "name": m.get("name", "Unnamed Module"),
+            "responsibility": (
+                m.get("responsibility")
+                or m.get("description")
+                or "No responsibility provided"
+            ),
+            "inputs": m.get("inputs", []),
+            "outputs": m.get("outputs", [])
+        })
+    return normalized
+
+
+def normalize_architecture(data: dict) -> dict:
+    data["modules"] = normalize_modules(data.get("modules", []))
+    data.setdefault("data_flow", [])
+    data.setdefault("decision_rules", [])
+    return data
+
+
 # ==================================================
 # 1. ANALYZE INTENT
 # ==================================================
 
-def analyze_intent(content: str) -> str:
+def analyze_intent(content: str) -> dict:
     prompt = _json_guard(f"""
 Decompose the intent into:
 - goals
@@ -74,14 +108,15 @@ JSON:
   "success_metrics": []
 }}
 """)
-    return _generate(prompt)
+    raw = _generate(prompt)
+    return _safe_json_load(raw)
 
 
 # ==================================================
 # 2. GENERATE SYSTEM ARCHITECTURE
 # ==================================================
 
-def generate_system_architecture(intent_analysis: dict) -> str:
+def generate_system_architecture(intent_analysis: dict) -> dict:
     prompt = _json_guard(f"""
 Design a system architecture from this intent analysis:
 
@@ -94,14 +129,16 @@ JSON:
   "decision_rules": []
 }}
 """)
-    return _generate(prompt)
+    raw = _generate(prompt)
+    data = _safe_json_load(raw)
+    return normalize_architecture(data)
 
 
 # ==================================================
 # 3. SIMULATE FAILURE
 # ==================================================
 
-def simulate_failure(system_architecture: dict) -> str:
+def simulate_failure(system_architecture: dict) -> dict:
     prompt = _json_guard(f"""
 Analyze failure modes for this system:
 
@@ -115,14 +152,15 @@ JSON:
   "risk_level": "LOW"
 }}
 """)
-    return _generate(prompt)
+    raw = _generate(prompt)
+    return _safe_json_load(raw)
 
 
 # ==================================================
 # 4. OPTIMIZE SYSTEM
 # ==================================================
 
-def optimize_system(system_architecture: dict, objective: str) -> str:
+def optimize_system(system_architecture: dict, objective: str) -> dict:
     prompt = _json_guard(f"""
 Optimize the following system for objective: {objective}
 
@@ -139,14 +177,22 @@ JSON:
   "tradeoffs": {{}}
 }}
 """)
-    return _generate(prompt)
+    raw = _generate(prompt)
+    data = _safe_json_load(raw)
+
+    data["optimized_architecture"] = normalize_architecture(
+        data.get("optimized_architecture", {})
+    )
+
+    data.setdefault("tradeoffs", {})
+    return data
 
 
 # ==================================================
 # 5. EXPLAIN SYSTEM
 # ==================================================
 
-def explain_system(system_architecture: dict) -> str:
+def explain_system(system_architecture: dict) -> dict:
     prompt = _json_guard(f"""
 Explain the architectural decisions for this system:
 
@@ -157,4 +203,5 @@ JSON:
   "explanations": []
 }}
 """)
-    return _generate(prompt)
+    raw = _generate(prompt)
+    return _safe_json_load(raw)
