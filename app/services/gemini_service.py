@@ -17,7 +17,6 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
-# ✅ VERIFIED AVAILABLE MODEL
 MODEL_NAME = "models/gemini-pro-latest"
 
 # ==================================================
@@ -39,13 +38,9 @@ IMPORTANT RULES (ABSOLUTE):
 
 
 def _generate_json(prompt: str, retries: int = 1) -> dict:
-    """
-    Calls Gemini and guarantees a JSON object return.
-    Never raises. Never crashes FastAPI.
-    """
     last_raw = ""
 
-    for attempt in range(retries + 1):
+    for _ in range(retries + 1):
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=prompt
@@ -60,7 +55,6 @@ def _generate_json(prompt: str, retries: int = 1) -> dict:
 
         time.sleep(0.5)
 
-    # FINAL FALLBACK — NEVER CRASH
     return {
         "error": "GEMINI_INVALID_JSON",
         "raw_output": last_raw[:500]
@@ -78,11 +72,7 @@ def normalize_modules(modules: list) -> list:
 
         normalized.append({
             "name": m.get("name", "Unnamed Module"),
-            "responsibility": (
-                m.get("responsibility")
-                or m.get("description")
-                or "No responsibility provided"
-            ),
+            "responsibility": m.get("responsibility") or m.get("description", ""),
             "inputs": m.get("inputs", []),
             "outputs": m.get("outputs", [])
         })
@@ -93,10 +83,11 @@ def normalize_architecture(data: dict) -> dict:
     if not isinstance(data, dict):
         data = {}
 
-    data["modules"] = normalize_modules(data.get("modules", []))
-    data["data_flow"] = data.get("data_flow", [])
-    data["decision_rules"] = data.get("decision_rules", [])
-    return data
+    return {
+        "modules": normalize_modules(data.get("modules", [])),
+        "data_flow": data.get("data_flow", []),
+        "decision_rules": data.get("decision_rules", [])
+    }
 
 # ==================================================
 # 1. ANALYZE INTENT
@@ -133,17 +124,27 @@ JSON:
 
 # ==================================================
 # 2. GENERATE SYSTEM ARCHITECTURE
+# (FIX: force inputs/outputs early)
 # ==================================================
 
 def generate_system_architecture(intent_analysis: dict) -> dict:
     prompt = _json_guard(f"""
-Design a system architecture from this intent analysis:
+Design a system architecture from this intent analysis.
+Every module MUST include inputs and outputs.
 
+Intent:
 {json.dumps(intent_analysis, indent=2)}
 
 JSON:
 {{
-  "modules": [],
+  "modules": [
+    {{
+      "name": "",
+      "responsibility": "",
+      "inputs": [],
+      "outputs": []
+    }}
+  ],
   "data_flow": [],
   "decision_rules": []
 }}
@@ -154,30 +155,45 @@ JSON:
 
 # ==================================================
 # 3. SIMULATE FAILURE
+# (FIX: component-aware failures)
 # ==================================================
 
 def simulate_failure(system_architecture: dict) -> dict:
     prompt = _json_guard(f"""
-Analyze failure modes for this system:
+Analyze failure modes for this system.
+Each failure MUST reference a specific module.
 
+System:
 {json.dumps(system_architecture, indent=2)}
 
 JSON:
 {{
-  "best_case": "",
-  "worst_case": "",
-  "failure_points": [],
-  "risk_level": "LOW"
+  "failure_points": [
+    {{
+      "component": "",
+      "failure": "",
+      "impact": "",
+      "severity": "LOW|MEDIUM|HIGH"
+    }}
+  ],
+  "overall_risk": "LOW|MEDIUM|HIGH"
 }}
 """)
 
     data = _generate_json(prompt)
 
+    failures = []
+    for f in data.get("failure_points", []):
+        failures.append({
+            "component": f.get("component", "Unknown"),
+            "failure": f.get("failure", ""),
+            "impact": f.get("impact", ""),
+            "severity": f.get("severity", "MEDIUM")
+        })
+
     return {
-        "best_case": data.get("best_case", ""),
-        "worst_case": data.get("worst_case", ""),
-        "failure_points": data.get("failure_points", []),
-        "risk_level": data.get("risk_level", "LOW")
+        "failure_points": failures,
+        "overall_risk": data.get("overall_risk", "MEDIUM")
     }
 
 # ==================================================
@@ -204,33 +220,55 @@ JSON:
 
     data = _generate_json(prompt)
 
-    optimized = normalize_architecture(
-        data.get("optimized_architecture", {})
-    )
-
     return {
-        "optimized_architecture": optimized,
+        "optimized_architecture": normalize_architecture(
+            data.get("optimized_architecture", {})
+        ),
         "tradeoffs": data.get("tradeoffs", {})
     }
 
 # ==================================================
 # 5. EXPLAIN SYSTEM
+# (FIX: real explainable AI output)
 # ==================================================
 
 def explain_system(system_architecture: dict) -> dict:
     prompt = _json_guard(f"""
-Explain the architectural decisions for this system:
+Explain the key architectural decisions.
+Each explanation MUST include decision, rationale, risk, confidence.
 
+System:
 {json.dumps(system_architecture, indent=2)}
 
 JSON:
 {{
-  "explanations": []
+  "explanations": [
+    {{
+      "decision": "",
+      "rationale": "",
+      "risk": "LOW|MEDIUM|HIGH",
+      "confidence": 0.0
+    }}
+  ]
 }}
 """)
 
     data = _generate_json(prompt)
 
+    explanations = []
+    for e in data.get("explanations", []):
+        try:
+            confidence = float(e.get("confidence", 0.75))
+        except Exception:
+            confidence = 0.75
+
+        explanations.append({
+            "decision": e.get("decision", ""),
+            "rationale": e.get("rationale", ""),
+            "risk": e.get("risk", "MEDIUM"),
+            "confidence": max(0.0, min(confidence, 1.0))
+        })
+
     return {
-        "explanations": data.get("explanations", [])
+        "explanations": explanations
     }

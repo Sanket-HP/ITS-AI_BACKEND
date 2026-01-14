@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from app.models.schemas import (
     IntentInput,
     IntentAnalysis,
@@ -26,79 +26,31 @@ router = APIRouter()
 # ==================================================
 
 def normalize_system_architecture(raw: dict) -> dict:
-    # -------- data_flow --------
-    normalized_data_flow = []
-
-    for item in raw.get("data_flow", []):
-        if isinstance(item, dict) and "flow_name" in item and "steps" in item:
-            normalized_data_flow.append(item)
-            continue
-
-        if isinstance(item, dict):
-            step = f"{item.get('from', '')} -> {item.get('to', '')}".strip()
-            normalized_data_flow.append({
-                "flow_name": "General Flow",
-                "steps": [step]
-            })
-            continue
-
-        if isinstance(item, str):
-            normalized_data_flow.append({
-                "flow_name": "General Flow",
-                "steps": [item]
-            })
-
-    # -------- decision_rules --------
-    normalized_decision_rules = []
-
-    for rule in raw.get("decision_rules", []):
-        if isinstance(rule, dict):
-            normalized_decision_rules.append({
-                "decision": rule.get("decision") or "Architectural decision",
-                "justification": rule.get("justification", "Derived from system requirements"),
-                "confidence": float(rule.get("confidence", 85)),
-                "risk_level": rule.get("risk_level", "MEDIUM"),
-            })
-        elif isinstance(rule, str):
-            normalized_decision_rules.append({
-                "decision": rule,
-                "justification": "Derived from system requirements",
-                "confidence": 75.0,
-                "risk_level": "MEDIUM",
-            })
-
-    raw["data_flow"] = normalized_data_flow
-    raw["decision_rules"] = normalized_decision_rules
-
+    raw.setdefault("modules", [])
+    raw.setdefault("data_flow", [])
+    raw.setdefault("decision_rules", [])
     return raw
 
 
 # ==================================================
-# Helper: Normalize Failure Simulation
+# Helper: Normalize Failure Simulation (NEW SCHEMA)
 # ==================================================
 
 def normalize_failure_simulation(raw: dict) -> dict:
-    normalized_points = []
+    normalized = []
 
     for fp in raw.get("failure_points", []):
-        if isinstance(fp, dict):
-            normalized_points.append({
-                "point": fp.get("point", "Unknown Component"),
-                "description": fp.get("description", "Operational risk identified."),
-                "impact": fp.get("impact", "Service degradation"),
-                "mitigation": fp.get(
-                    "mitigation",
-                    "Implement redundancy, monitoring, automated failover."
-                ),
-                "affected_modules": fp.get("affected_modules", []),
-            })
+        normalized.append({
+            "point": fp.get("component", "Unknown Component"),
+            "description": fp.get("failure", "Failure scenario identified."),
+            "impact": fp.get("impact", "Operational degradation."),
+            "severity": fp.get("severity", "MEDIUM"),
+        })
 
-    raw["failure_points"] = normalized_points
-    raw.setdefault("best_case", "System remains operational with graceful degradation.")
-    raw.setdefault("worst_case", "Cascading failures degrade system availability.")
-    raw.setdefault("risk_level", "HIGH")
-
-    return raw
+    return {
+        "failure_points": normalized,
+        "overall_risk": raw.get("overall_risk", "MEDIUM"),
+    }
 
 
 # ==================================================
@@ -111,10 +63,7 @@ def normalize_failure_simulation(raw: dict) -> dict:
     summary="Analyze human intent into structured goals",
 )
 def analyze(data: IntentInput):
-    try:
-        return analyze_intent(data.content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return analyze_intent(data.content)
 
 
 # ==================================================
@@ -127,11 +76,8 @@ def analyze(data: IntentInput):
     summary="Generate system architecture from intent analysis",
 )
 def generate_system(intent: IntentAnalysis):
-    try:
-        architecture = generate_system_architecture(intent.dict())
-        return normalize_system_architecture(architecture)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    architecture = generate_system_architecture(intent.dict())
+    return normalize_system_architecture(architecture)
 
 
 # ==================================================
@@ -144,11 +90,8 @@ def generate_system(intent: IntentAnalysis):
     summary="Simulate failure scenarios for a system",
 )
 def simulate(system: SystemArchitecture):
-    try:
-        simulation = simulate_failure(system.dict())
-        return normalize_failure_simulation(simulation)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    simulation = simulate_failure(system.dict())
+    return normalize_failure_simulation(simulation)
 
 
 # ==================================================
@@ -161,17 +104,14 @@ def simulate(system: SystemArchitecture):
     summary="Optimize system architecture based on objective",
 )
 def optimize(data: OptimizationInput):
-    try:
-        return optimize_system(
-            data.system_architecture,
-            data.objective
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return optimize_system(
+        data.system_architecture,
+        data.objective
+    )
 
 
 # ==================================================
-# Explain System (Frontend-safe)
+# Explain System (UPDATED EXPLAINABILITY)
 # ==================================================
 
 @router.post(
@@ -180,10 +120,7 @@ def optimize(data: OptimizationInput):
     summary="Explain why system decisions were made",
 )
 def explain(system: SystemArchitecture):
-    try:
-        parsed = explain_system(system.dict())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    parsed = explain_system(system.dict())
 
     explanation_items = []
 
@@ -191,9 +128,9 @@ def explain(system: SystemArchitecture):
         explanation_items.append(
             ExplanationItem(
                 decision=item.get("decision", "Architectural decision"),
-                justification=item.get("justification", ""),
-                confidence=float(item.get("confidence", 85)),
-                risk_level=item.get("risk_level", "MEDIUM"),
+                justification=item.get("rationale", ""),
+                confidence=float(item.get("confidence", 0.85) * 100),
+                risk_level=item.get("risk", "MEDIUM"),
             )
         )
 
