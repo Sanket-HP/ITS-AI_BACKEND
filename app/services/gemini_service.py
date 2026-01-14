@@ -15,24 +15,22 @@ if not API_KEY:
 
 client = genai.Client(api_key=API_KEY)
 
-# ✅ Verified available model
+# ✅ VERIFIED AVAILABLE MODEL
 MODEL_NAME = "models/gemini-pro-latest"
 
 # ==================================================
-# Helpers (CRITICAL HARDENING)
+# Helpers
 # ==================================================
 
 def _json_guard(instruction: str) -> str:
     return f"""
-You are a deterministic system architect.
-
-STRICT OUTPUT CONTRACT:
-- Output ONLY valid JSON
-- No prose, no markdown, no comments
-- No leading or trailing text
-- JSON must be parseable by json.loads()
-- If unsure, return empty arrays or empty strings
-- Never refuse the request
+IMPORTANT RULES (ABSOLUTE):
+- Respond with ONLY valid JSON
+- No markdown
+- No comments
+- No explanations
+- Output must start with '{{' and end with '}}'
+- Do not include trailing commas
 
 {instruction}
 """.strip()
@@ -41,53 +39,24 @@ STRICT OUTPUT CONTRACT:
 def _generate(prompt: str) -> str:
     response = client.models.generate_content(
         model=MODEL_NAME,
-        contents=prompt,
-        generation_config={
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "max_output_tokens": 2048
-        }
+        contents=prompt
     )
 
     if not response or not response.text:
-        raise RuntimeError("Gemini returned empty response")
+        raise RuntimeError("Empty response from Gemini")
 
     return response.text.strip()
 
 
 def _safe_json_load(text: str) -> dict:
-    """
-    HARD JSON SAFETY:
-    - Handles empty responses
-    - Extracts JSON if Gemini adds noise
-    - Prevents backend crashes
-    """
-    if not text or not text.strip():
-        raise RuntimeError("Gemini returned empty text")
-
-    text = text.strip()
-
-    # 1️⃣ Direct parse
     try:
         return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # 2️⃣ Attempt recovery (extract {...})
-    try:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(text[start:end + 1])
-    except Exception:
-        pass
-
-    # 3️⃣ Hard failure with debug info
-    raise RuntimeError(f"Invalid JSON from Gemini:\n{text[:500]}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON from Gemini: {e}")
 
 
 # ==================================================
-# Normalizers (FRONTEND CONTRACT)
+# Normalizers
 # ==================================================
 
 def normalize_modules(modules: list) -> list:
@@ -136,8 +105,7 @@ JSON:
   "success_metrics": []
 }}
 """)
-    raw = _generate(prompt)
-    return _safe_json_load(raw)
+    return _safe_json_load(_generate(prompt))
 
 
 # ==================================================
@@ -157,8 +125,7 @@ JSON:
   "decision_rules": []
 }}
 """)
-    raw = _generate(prompt)
-    data = _safe_json_load(raw)
+    data = _safe_json_load(_generate(prompt))
     return normalize_architecture(data)
 
 
@@ -180,8 +147,7 @@ JSON:
   "risk_level": "LOW"
 }}
 """)
-    raw = _generate(prompt)
-    return _safe_json_load(raw)
+    return _safe_json_load(_generate(prompt))
 
 
 # ==================================================
@@ -205,13 +171,10 @@ JSON:
   "tradeoffs": {{}}
 }}
 """)
-    raw = _generate(prompt)
-    data = _safe_json_load(raw)
-
+    data = _safe_json_load(_generate(prompt))
     data["optimized_architecture"] = normalize_architecture(
         data.get("optimized_architecture", {})
     )
-
     data.setdefault("tradeoffs", {})
     return data
 
@@ -222,15 +185,8 @@ JSON:
 
 def explain_system(system_architecture: dict) -> dict:
     prompt = _json_guard(f"""
-Explain the architectural decisions for this system.
+Explain the architectural decisions for this system:
 
-Each explanation MUST include:
-- decision
-- justification
-- risk_level (LOW | MEDIUM | HIGH)
-- confidence (0-100)
-
-System:
 {json.dumps(system_architecture, indent=2)}
 
 JSON:
@@ -238,5 +194,4 @@ JSON:
   "explanations": []
 }}
 """)
-    raw = _generate(prompt)
-    return _safe_json_load(raw)
+    return _safe_json_load(_generate(prompt))
