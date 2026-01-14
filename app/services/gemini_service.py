@@ -3,7 +3,7 @@ import json
 import time
 from dotenv import load_dotenv
 from google import genai
-from services.json_repair import repair_and_parse
+from app.services.json_repair import repair_and_parse
 
 # ==================================================
 # Environment & Client Setup
